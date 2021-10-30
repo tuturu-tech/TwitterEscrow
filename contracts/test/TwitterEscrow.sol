@@ -1,10 +1,11 @@
+/*
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
 contract TwitterEscrow {
 
     enum Status{Pending, Open, Fulfilled, Closed, Canceled} // 0, 1, 2, 3 Respectivelly
-/*
+
     struct Job {
         // Defines basic job structure
         // Job name, description, etc. can be kept off-chain on a regular database
@@ -15,7 +16,7 @@ contract TwitterEscrow {
         mapping(uint256 => Task) tasks; // Maps task Ids to Tasks
     }
 
-    mapping (uint256 => Task[]) jobs;*/ 
+    mapping (uint256 => Task[]) jobs; 
 
     struct Task {
         Status status;
@@ -51,7 +52,7 @@ contract TwitterEscrow {
     function cancelAgreement(uint256 _jobId) public{
         // Cancel agreement if the job was not fulfilled and the grace period is still on
     }
-    /*
+    
     function getJobStatus(uint256 _jobId) public view returns(Status) {
         return allJobs[_jobId].status;
     }
@@ -59,7 +60,7 @@ contract TwitterEscrow {
     function getJobDetails(uint256 _jobId) public view returns (Job memory) {
         return allJobs[_jobId];
     }
-    */
+    
     function getTaskStatus(uint256 _jobId, uint256 _taskId) public view returns(Status) {
         Job memory fetchedJob = allJobs[_jobId];
         Task memory fetchedTask = fetchedJob.tasks[_taskId];
@@ -71,3 +72,4 @@ contract TwitterEscrow {
     }
 
 }
+*/

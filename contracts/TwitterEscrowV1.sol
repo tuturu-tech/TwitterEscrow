@@ -12,7 +12,7 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
     using Counters for Counters.Counter;
     Counters.Counter private _taskIds;
 
-    enum Status{Pending, Open, Fulfilled, Closed, Canceled} // 0, 1, 2, 3, 4 Respectivelly
+    enum Status{Pending, Open, Fulfilled, Closed, Canceled} // 0, 1, 2, 3, 4 Respectively
 
     struct Task {
         Status status;
@@ -22,28 +22,32 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
         bytes32 tweetHash; // OR could have only hash and have the content on a regular database
         uint256 taskReward; // How much it pays out to promoter if finished successfully
         address rewardToken; // Which token will it pay out
-        uint256 taskBalance;
+        uint256 taskFee;
     }
 
     mapping(uint256 => Task) public taskIdentifier; 
+    Task[] public taskList;
     mapping(address => uint256[]) public taskSponsors; // sponsor address mapped to array of jobIds
     mapping(address => uint256[]) public taskPromoters; // promoter address mapped to array of jobIds
     address[] public allowedTokens;
     uint256 commissionBalance;
-    uint256 commissionAmount = 0.01 ether; // Hardcoded for now, should use Chainlink Price feed in future
+    uint256 commissionFee = 0.01 ether; // Hardcoded for now, should use Chainlink Price feed in future
 
     constructor(address[] memory _allowedTokens) {
         allowedTokens = _allowedTokens;
+        _taskIds.increment();
     }
 
     function createTask(address _promoter, string memory _tweetContent, uint256 _taskReward, address _token) payable public {
         // Takes in task specification and creates a task
         require(_taskReward > 0); // Reward can't be 0
         require(tokenIsAllowed(_token)); // Token must be on the list of allowed tokens
-        uint256 _taskBalance = _taskReward + commissionAmount;
+        uint256 _taskBalance = _taskReward + commissionFee;
+        bool test = IERC20(_token).approve(address(this), _taskBalance); // Doesn't work
         IERC20(_token).transferFrom(msg.sender, address(this), _taskBalance);
         bytes32 _tweetHash = keccak256(abi.encodePacked(_tweetContent));
         Status _status = Status.Pending;
+
         Task memory newTask = Task(
             _status,
             msg.sender,
@@ -52,50 +56,56 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
             _tweetHash,
             _taskReward,
             _token,
-            _taskBalance
+            commissionFee
         );
         taskIdentifier[_taskIds.current()] = newTask; // Sets the taskId
         _taskIds.increment();
+        taskList.push(newTask);
     }
 
     function fulfillTask(uint256 _taskId) public {
         // EA stuff
     }
 
-    // Used if job was finished successfully
+    // Used if job was finished successfully, nonReentrant ensures it can only be run once
     function withdrawReward(uint256 _taskId) external nonReentrant { 
-        // Only promoters can call this
+        // Only the assigned promoter can withdraw
         Task memory thisTask = taskIdentifier[_taskId];
         require(msg.sender == thisTask.promoter, "Not the promoter!");
+        // Promoter can only withdraw if they have completed the promotion
         require(thisTask.status == Status.Fulfilled, "The task was not completed!");
 
-
-
-        // They can only withdraw a certain amount
-        IERC20(thisTask.rewardToken).transfer(msg.sender, thisTask.taskReward);
-
-        // They can only withdraw if they have completed the promotion
-        // They can only withdraw if Job is still active
-        // They can only withdraw once
+        // Fee goes into the contract overall balance
+        commissionBalance = commissionBalance + thisTask.taskFee;
+        thisTask.taskFee = 0;
+        // Promoter can only withdraw the reward amount
+        uint256 reward = thisTask.taskReward;
+        thisTask.taskReward = 0;
+        IERC20(thisTask.rewardToken).transfer(msg.sender, reward);
+        // Task status is set to closed
+        thisTask.status = Status.Closed;
+        // Task is memory is transfered to storage
+        taskIdentifier[_taskId] = thisTask;
     }
 
-    function withdrawFunds(uint256 _jobId) public { // Used if job fails
+    function withdrawFunds(uint256 _taskId) public { // Used if job fails
         // Only Sponsors can call this
         // They can only withdraw a certain amount
         // They can only withdraw if the Job end date has passed and the promotion failed
         // They can only withdraw if the Job is still active
     }
 
-    function cancelAgreement(uint256 _jobId) public{
+    function cancelTask(uint256 _taskId) public{
         // Cancel agreement if the job was not fulfilled and the grace period is still on
+
     }
 
     function getTaskStatus(uint256 _taskId) public view returns(Status) {
         return taskIdentifier[_taskId].status;
     }
 
-    function getTaskDetails(uint256 _taskId) public view returns (Task memory) {
-
+    function getTask(uint256 _taskId) public view returns (Task memory) {
+        return taskIdentifier[_taskId];
     }
 
     function tokenIsAllowed(address _token) public view returns (bool) {
@@ -109,6 +119,14 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
             }
         }
         return false;
+    }
+
+    function getAllowedTokens() public view returns (address[] memory){
+        return allowedTokens;
+    }
+
+    function getAllTasks() public view returns (Task[] memory) {
+        return taskList;
     }
 
 }
