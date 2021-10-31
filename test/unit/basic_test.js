@@ -1,3 +1,4 @@
+const { BigNumber } = require("@ethersproject/bignumber");
 const { expect } = require("chai");
 const keccak256 = require("keccak256");
 
@@ -39,8 +40,15 @@ describe("TwitterEscrowV1", function () {
     const taskReward = "1000000000000000000";
     const taskFee = "10000000000000000";
     let createdTask;
+    let expectedBalance = "1010000000000000000";
 
     beforeEach(async function () {
+      let tx = await mockERCToken.approve(
+        twitterEscrow.address,
+        ethers.constants.MaxUint256
+      );
+      await tx.wait();
+
       await twitterEscrow.createTask(
         addr1.address,
         tweetContent,
@@ -49,6 +57,11 @@ describe("TwitterEscrowV1", function () {
       );
 
       createdTask = await twitterEscrow.taskIdentifier(1);
+    });
+
+    it("Should have expected contract balance", async function () {
+      let balance = await mockERCToken.balanceOf(twitterEscrow.address);
+      expect(balance.toString()).to.equal(expectedBalance);
     });
 
     it("Should successfuly create a task", async function () {
@@ -90,6 +103,81 @@ describe("TwitterEscrowV1", function () {
       expect(createdTask.taskFee).to.equal(taskFee);
     });
 
-    it("Created task should be added to task list with ID 1", async function () {});
+    it("Created task should be added to Array of tasks", async function () {
+      let taskArr = await twitterEscrow.getAllTasks();
+      expect(taskArr.length).to.equal(1);
+    });
+  });
+
+  describe("Task fulfillment and withdrawal", async function () {
+    const tweetContent = "This tweet";
+    const taskReward = "1000000000000000000";
+    const taskFee = "10000000000000000";
+    let createdTask;
+    let fulfilledTask;
+    let expectedBalance = "1010000000000000000";
+    let tx;
+
+    beforeEach(async function () {
+      tx = await mockERCToken.approve(
+        twitterEscrow.address,
+        ethers.constants.MaxUint256
+      );
+      await tx.wait();
+
+      await twitterEscrow.createTask(
+        addr1.address,
+        tweetContent,
+        taskReward,
+        mockToken
+      );
+
+      await twitterEscrow.createTask(
+        addr2.address,
+        "Second task",
+        taskReward,
+        mockToken
+      );
+
+      createdTask = await twitterEscrow.taskIdentifier(1);
+      await twitterEscrow.fulfillTask(2);
+      fulfilledTask = await twitterEscrow.taskIdentifier(2);
+    });
+
+    it("Task with ID 1 should be fulfilled", function () {
+      expect(fulfilledTask.status).to.equal(2);
+    });
+
+    it("Should fail if task is not fulfilled", async function () {
+      await expect(
+        twitterEscrow.connect(addr1).withdrawReward(1)
+      ).to.be.revertedWith("The task was not completed!");
+    });
+
+    it("Should fail if msg.sender is not promoter", async function () {
+      await expect(
+        twitterEscrow.connect(addr1).withdrawReward(2)
+      ).to.be.revertedWith("Not the promoter!");
+    });
+
+    it("Should succeed if contract is fulfilled and caller is promoter", async function () {
+      await expect(twitterEscrow.connect(addr2).withdrawReward(2)).to.not.be
+        .reverted;
+    });
+
+    it("Should send the reward if successful and update all balances", async function () {
+      // Ensure initial balance is 0
+      let balance = await mockERCToken.balanceOf(addr2.address);
+      expect(balance.toString()).to.equal("0");
+
+      await twitterEscrow.connect(addr2).withdrawReward(2);
+
+      // Get updated balance
+      balance = await mockERCToken.balanceOf(addr2.address);
+      expect(balance.toString()).to.equal(taskReward);
+
+      balance = await twitterEscrow.getContractBalance(mockToken);
+      expect(balance.toString()).to.equal(taskFee);
+    });
   });
 });

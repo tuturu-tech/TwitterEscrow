@@ -6,39 +6,29 @@ const deployMocks = async () => {
   await mockContract.deployed();
 
   console.log("Mock token deployed to:", mockContract.address);
-  return mockContract.address;
+  return mockContract;
 };
 
 const main = async () => {
   [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
-  const tokenAddress = deployMocks();
+
+  const mockERC20ContractFactory = await hre.ethers.getContractFactory(
+    "MockERC20"
+  );
+  const mockContract = await mockERC20ContractFactory.deploy();
+  await mockContract.deployed();
+
+  console.log("Mock token deployed to:", mockContract.address);
+
+  //const token = deployMocks();
   const twitterContractFactory = await hre.ethers.getContractFactory(
     "TwitterEscrowV1"
   );
-  const twitterContract = await twitterContractFactory.deploy([tokenAddress]);
-
+  const twitterContract = await twitterContractFactory.deploy([
+    mockContract.address,
+  ]);
   await twitterContract.deployed();
   console.log("Contract deployed to:", twitterContract.address);
-
-  const tweetContent = "This tweet";
-  const taskReward = "1000000000000000000";
-
-  await twitterContract.createTask(
-    addr1.address,
-    tweetContent,
-    taskReward,
-    tokenAddress
-  );
-
-  await twitterContract.createTask(
-    addr1.address,
-    "Second tweet",
-    taskReward,
-    tokenAddress
-  );
-
-  const taskList = await twitterContract.getAllTasks();
-  console.log(taskList);
 };
 
 const runMain = async () => {
