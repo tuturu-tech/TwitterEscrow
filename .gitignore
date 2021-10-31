@@ -5,6 +5,7 @@ node_modules
 coverage
 coverage.json
 typechain
+contract_addresses
 
 #Hardhat files
 cache

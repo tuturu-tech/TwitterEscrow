@@ -13,13 +13,18 @@ describe("TwitterEscrowV1", function () {
 
   beforeEach(async function () {
     [owner, addr1, addr2, ...addrs] = await ethers.getSigners();
+    mockAPIConsumerAddress = addr2.address; // Only used for local testing without APIConsumer
+
     mockERCTokenContract = await ethers.getContractFactory("MockERC20");
     mockERCToken = await mockERCTokenContract.deploy();
     await mockERCToken.deployed();
     mockToken = await mockERCToken.address;
 
     twitterContract = await ethers.getContractFactory("TwitterEscrowV1");
-    twitterEscrow = await twitterContract.deploy([mockToken]);
+    twitterEscrow = await twitterContract.deploy(
+      [mockToken],
+      mockAPIConsumerAddress
+    );
     await twitterEscrow.deployed();
   });
 
@@ -37,6 +42,7 @@ describe("TwitterEscrowV1", function () {
 
   describe("Task creation", async function () {
     const tweetContent = "This tweet";
+    const tweetHash = "0x" + keccak256(tweetContent).toString("hex");
     const taskReward = "1000000000000000000";
     const taskFee = "10000000000000000";
     let createdTask;
@@ -51,7 +57,7 @@ describe("TwitterEscrowV1", function () {
 
       await twitterEscrow.createTask(
         addr1.address,
-        tweetContent,
+        tweetHash,
         taskReward,
         mockToken
       );
@@ -80,19 +86,19 @@ describe("TwitterEscrowV1", function () {
       expect(createdTask.promoter).to.equal(addr1.address);
     });
 
-    it("Should have the expected tweetContent", async function () {
+    /*it("Should have the expected tweetContent", async function () {
       expect(createdTask.tweetContent).to.equal(tweetContent);
-    });
+    });*/
 
     it("Should have the expected tweetReward", async function () {
       const rwrd = createdTask.taskReward.toString();
       expect(rwrd).to.equal(taskReward);
     });
 
-    it("Should hash the tweet correctly", async function () {
+    /*  it("Should hash the tweet correctly", async function () {
       const hash = "0x" + keccak256(tweetContent).toString("hex");
       expect(createdTask.tweetHash.toString()).to.equal(hash);
-    });
+    }); */
 
     it("Should have the correct token address", async function () {
       expect(createdTask.rewardToken).to.equal(mockToken);
@@ -111,6 +117,8 @@ describe("TwitterEscrowV1", function () {
 
   describe("Task fulfillment and withdrawal", async function () {
     const tweetContent = "This tweet";
+    const tweetHash = "0x" + keccak256(tweetContent).toString("hex");
+    const tweetHash2 = "0x" + keccak256("Second task").toString("hex");
     const taskReward = "1000000000000000000";
     const taskFee = "10000000000000000";
     let createdTask;
@@ -127,14 +135,14 @@ describe("TwitterEscrowV1", function () {
 
       await twitterEscrow.createTask(
         addr1.address,
-        tweetContent,
+        tweetHash,
         taskReward,
         mockToken
       );
 
       await twitterEscrow.createTask(
         addr2.address,
-        "Second task",
+        tweetHash2,
         taskReward,
         mockToken
       );

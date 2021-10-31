@@ -5,82 +5,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import "./IAPIConsumerTwitter.sol";
 import "hardhat/console.sol";
-
-contract APIConsumerTwitter is ChainlinkClient {
-    using Chainlink for Chainlink.Request;
-
-      bool public twitter;
-
-      address private oracle;
-      mapping(string => bytes32) jobIds;
-      uint256 private fee;
-
-      function parseTweetIds(string[] memory _tweetIds) pure internal returns (string memory) {
-          string memory result = "";
-          for (uint256 i=0; i < _tweetIds.length; i++) {
-              result = string(abi.encodePacked(result,",", _tweetIds[i]));
-          }
-          return result;
-      }
-
-      /**
-       * Network: Kovan
-       * Oracle: 0xc57B33452b4F7BB189bB5AfaE9cc4aBa1f7a4FD8 (Chainlink Devrel
-       * Node)
-       * Job ID: d5270d1c311941d0b08bead21fea7747
-       * Fee: 0.1 LINK
-       */
-      constructor() {
-          setPublicChainlinkToken();
-          oracle = 0x521E899DD6c47ea8DcA360Fc46cA41e5A904d28b;
-          jobIds["Timeline"] = "e5ce0aaf603d4aa2be36b62bb296ce96";
-          jobIds["Lookup"] = "438fb98017e94736ba2329964c164a6c";
-          fee = 0.1 * 10 ** 18; // (Varies by network and job)
-      }
-
-      /**
-       * Create a Chainlink request to retrieve API response, find the target
-       * data, then multiply by 1000000000000000000 (to remove decimal places from data).
-       */
-      function requestTwitterTimelineData(string memory _userId, string memory _tweetHash ) public returns (bytes32 requestId)
-      {
-          Chainlink.Request memory request = buildChainlinkRequest(jobIds["Timeline"], address(this), this.fulfill.selector);
-
-
-          request.add("userid", _userId);
-          request.add("tweetHash", _tweetHash);
-          request.add("endpoint", "user_timeline.json");
-
-          // Sends the request
-          return sendChainlinkRequestTo(oracle, request, fee);
-      }
-
-      function requestTwitterLookupData(string memory _tweetId, string memory _tweetHash) public returns (bytes32 requestId)
-      {
-          Chainlink.Request memory request = buildChainlinkRequest(jobIds["Lookup"], address(this), this.fulfill.selector);
-
-
-          request.add("tweetids", _tweetId);
-          request.add("tweetHash", _tweetHash);
-          request.add("endpoint", "lookup.json");
-
-          // Sends the request
-          return sendChainlinkRequestTo(oracle, request, fee);
-      }
-
-      /**
-       * Receive the response in the form of uint256
-       */
-      function fulfill(bytes32 _requestId, bool _twitter) public recordChainlinkFulfillment(_requestId)
-      {
-          twitter = _twitter;
-      }
-
-      // function withdrawLink() external {} - Implement a withdraw function to avoid locking your LINK in the contract
-
-}
 
 contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
     using Counters for Counters.Counter;
@@ -92,13 +18,14 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
         Status status;
         address sponsor;
         address promoter;
-        string tweetContent; // Could have only content and hash it in contract
-        bytes32 tweetHash; // OR could have only hash and have the content on a regular database
+        //string tweetContent; // Could have only content and hash it in contract
+        string tweetHash; // OR could have only hash and have the content on a regular database
         uint256 taskReward; // How much it pays out to promoter if finished successfully
         address rewardToken; // Which token will it pay out
         uint256 taskFee;
     }
 
+    address private APIConsumerTwitterAddress;
     mapping(uint256 => Task) public taskIdentifier; 
     Task[] public taskList;
     //mapping(address => uint256[]) public taskSponsors; // sponsor address mapped to array of taskIds
@@ -107,12 +34,13 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
     mapping (address => uint256) contractBalance;
     uint256 commissionFee = 0.01 ether; // Hardcoded for now, should use Chainlink Price feed in future
 
-    constructor(address[] memory _allowedTokens) {
+    constructor(address[] memory _allowedTokens, address _APIConsumerTwitterAddress) {
+        APIConsumerTwitterAddress = _APIConsumerTwitterAddress;
         allowedTokens = _allowedTokens;
         _taskIds.increment();
     }
 
-    function createTask(address _promoter, string memory _tweetContent, uint256 _taskReward, address _token) external payable {
+    function createTask(address _promoter, string memory _tweetHash, uint256 _taskReward, address _token) external payable {
         // Takes in task specification and creates a task
         require(_taskReward > 0, "Task reward must be greater than 0"); // Reward can't be 0
         require(tokenIsAllowed(_token), "That token is not allowed."); // Token must be on the list of allowed tokens
@@ -120,13 +48,13 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
         uint256 _taskBalance = _taskReward + commissionFee;
 
         IERC20(_token).transferFrom(msg.sender, address(this), _taskBalance);
-        bytes32 _tweetHash = keccak256(abi.encodePacked(_tweetContent));
+        //bytes32 _tweetHash = keccak256(abi.encodePacked(_tweetContent));
 
         Task memory newTask = Task(
             Status.Pending,
             msg.sender,
             _promoter,
-            _tweetContent,
+            //_tweetContent,
             _tweetHash,
             _taskReward,
             _token,
@@ -138,19 +66,40 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
         _taskIds.increment();
     }
 
+    /* 
+        !!REMOVE FROM PRODUCTION!!
+        This is a mock function for local testing purposes
+    */
+    function fulfillTask(uint256 _taskId) external {
+        taskIdentifier[_taskId].status = Status.Fulfilled;
+    }
+
     function fulfillTaskTimeline(uint256 _taskId, string memory _userid ) external returns(bool) {
         Task memory thisTask = taskIdentifier[_taskId];
         require(thisTask.promoter == msg.sender, "Only the promoter can fulfill a task");
         require(thisTask.status == Status.Open, "Only open tasks can be fulfilled");
-
-        taskIdentifier[_taskId].status = Status.Fulfilled;
+        IAPIConsumerTwitter(APIConsumerTwitterAddress).requestTwitterTimelineData(_userid, thisTask.tweetHash);
+        bool isSuccessful = IAPIConsumerTwitter(APIConsumerTwitterAddress).getIsSuccessful();
+        if (isSuccessful) {
+            taskIdentifier[_taskId].status = Status.Fulfilled;
+            return true;
+        } else {
+            return false;
+        }
     }
 
     function fulfillTaskLookup(uint256 _taskId, string[] memory _tweetIds) external returns (bool) {
         Task memory thisTask = taskIdentifier[_taskId];
         require(thisTask.promoter == msg.sender, "Only the promoter can fulfill a task");
         require(thisTask.status == Status.Open, "Only open tasks can be fulfilled");
-
+        
+        /*IAPIConsumerTwitter(APIConsumerTwitterAddress).requestTwitterTimelineData(_tweetIds, thisTask.tweetHash);
+        bool isSuccessful = IAPIConsumerTwitter(APIConsumerTwitterAddress).getIsSuccessful();
+        if (isSuccessful) {
+            taskIdentifier[_taskId].status = Status.Fulfilled;
+        } else {
+            revert();
+        }*/
 
         taskIdentifier[_taskId].status = Status.Fulfilled;
     }
@@ -267,6 +216,11 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
 
     function getContractBalance(address _token) public view returns (uint256) {
         return contractBalance[_token];
+    }
+
+    function setAPIConsumerTwitterAddress(address _APIConsumerTwitterAddress) external returns(address) {
+        APIConsumerTwitterAddress = _APIConsumerTwitterAddress;
+        return APIConsumerTwitterAddress;
     }
 
 }
