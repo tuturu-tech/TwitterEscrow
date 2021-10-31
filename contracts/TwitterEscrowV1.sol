@@ -5,8 +5,13 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./IAPIConsumerTwitter.sol";
 import "hardhat/console.sol";
+
+interface IAPIConsumerTwitter{
+    function requestTwitterTimelineData(string memory _userId, string memory _tweetHash ) external returns (bytes32 requestId);
+    function requestTwitterLookupData(string[] memory _tweetIds, string memory _tweetHash) external returns (bytes32 requestId);
+    function getIsSuccessful() external view returns (bool);
+}
 
 contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
     using Counters for Counters.Counter;
@@ -51,7 +56,7 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
         //bytes32 _tweetHash = keccak256(abi.encodePacked(_tweetContent));
 
         Task memory newTask = Task(
-            Status.Pending,
+            Status.Open,
             msg.sender,
             _promoter,
             //_tweetContent,
@@ -93,13 +98,13 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
         require(thisTask.promoter == msg.sender, "Only the promoter can fulfill a task");
         require(thisTask.status == Status.Open, "Only open tasks can be fulfilled");
         
-        /*IAPIConsumerTwitter(APIConsumerTwitterAddress).requestTwitterTimelineData(_tweetIds, thisTask.tweetHash);
+        IAPIConsumerTwitter(APIConsumerTwitterAddress).requestTwitterLookupData(_tweetIds, thisTask.tweetHash);
         bool isSuccessful = IAPIConsumerTwitter(APIConsumerTwitterAddress).getIsSuccessful();
         if (isSuccessful) {
             taskIdentifier[_taskId].status = Status.Fulfilled;
         } else {
             revert();
-        }*/
+        }
 
         taskIdentifier[_taskId].status = Status.Fulfilled;
     }
@@ -207,7 +212,7 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < taskList.length; i++) {
             if (taskList[i].status == Status.Open) {
                 openTasks[openTaskIndex] = taskList[i];
-                openTaskIndex += 1;
+                openTaskIndex = openTaskIndex + 1;
             }
         }
 
@@ -220,6 +225,10 @@ contract TwitterEscrowV1 is Ownable, ReentrancyGuard {
 
     function setAPIConsumerTwitterAddress(address _APIConsumerTwitterAddress) external returns(address) {
         APIConsumerTwitterAddress = _APIConsumerTwitterAddress;
+        return APIConsumerTwitterAddress;
+    }
+
+    function getAPIConsumerTwitterAddress() external view returns (address) {
         return APIConsumerTwitterAddress;
     }
 
